@@ -33,15 +33,16 @@ namespace queue
         private static readonly HttpClient client = new HttpClient();
         //API KEY QVKwDnKQKNx8xRUb0OqLxVxaIBaATuRjtUc8c9QgckmeEenRH1JDLKmRIZnDrgMp
         private String apiKey = "QVKwDnKQKNx8xRUb0OqLxVxaIBaATuRjtUc8c9QgckmeEenRH1JDLKmRIZnDrgMp";
+        List<Thread> threadler = new List<Thread>();
         public MainWindow()
         {
             InitializeComponent();
             LogFileName = "log" + /*DateTime.Now.ToString("yyyyMMdd-HHmmss") + */".txt";
             LogWorker("\n\n\n I am alive? \n");
             //Request();
-
+            //StartTracking();
             // move 'em to a button
-            /*List<Thread> threadler = new List<Thread>();
+            /*
             threadler.Add(new Thread(() => Request()));
             threadler[threadler.Count - 1].Start();*/
         }
@@ -221,6 +222,7 @@ namespace queue
         {
             decimal queuePrice = 0;
             decimal queueAmount = 0;
+            bool ask = false;
             try
             {
                 LogWorker("Started Queue!");
@@ -239,6 +241,7 @@ namespace queue
                             LogWorker("Found the queue price!");
                             LogWorker("Queue price is: " + item.First.ToString() + " with total amount of: " + item.First.Next.ToString());
                             queueAmount = MyDC(item.First.Next.ToString());
+                            ask = false;
                             break;
                         }
                     }
@@ -252,6 +255,7 @@ namespace queue
                             LogWorker("Found the queue price!");
                             LogWorker("Queue price is: " + item.First.ToString() + " with total amount of: " + item.First.Next.ToString());
                             queueAmount = MyDC(item.First.Next.ToString());
+                            ask = true;
                             break;
                         }
                     }
@@ -264,7 +268,8 @@ namespace queue
                 else
                 {
                     //Start tracking if everything is fine
-
+                    threadler.Add(new Thread(() => StartTracking(queuePrice, queueAmount)));
+                    threadler[threadler.Count - 1].Start();
                 }
             }
             catch (Exception ex)
@@ -278,9 +283,73 @@ namespace queue
             return decimal.Parse(stringtodecimal, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.NumberFormatInfo.InvariantInfo);
         }
 
-        private async void StartTracking()
+        private async void StartTracking(decimal queuePrice, decimal queueAmount)
         {
+            try
+            {
+                int lastTrade = 0;
+                bool cont = true;
 
+                //last trades
+                var tradeString = await client.GetStringAsync("https://www.binance.com/api/v1/trades?symbol=HOTBTC&limit=50");
+                List<TradeInfo> lastTrades = JsonConvert.DeserializeObject<List<TradeInfo>>(tradeString);
+                lastTrades.Reverse();
+                lastTrade = Int32.Parse(lastTrades[0].id);
+                LogWorker("Last trade id: " + lastTrades[0].id + " with qty: " + lastTrades[0].qty);
+                LogWorker("Waiting 3 secs...");
+                await WaitAsynchronouslyAsync(3000);
+
+                while (cont)
+                {
+                    
+                    //history lookup
+                    string tradeHistoryString = "";
+                    var tradeHistory = System.Net.WebRequest.Create("https://www.binance.com/api/v1/historicalTrades?symbol=HOTBTC&limit=50&fromId=" + lastTrade.ToString());
+                    tradeHistory.Method = "GET";
+                    tradeHistory.ContentType = "text/html";
+                    tradeHistory.Headers["X-MBX-APIKEY"] = apiKey;
+                    using (Stream s = tradeHistory.GetResponse().GetResponseStream())
+                    {
+                        using (StreamReader sr = new StreamReader(s))
+                        {
+                            tradeHistoryString = sr.ReadToEnd();
+                            LogWorker(String.Format("Response for historic trade lookup: {0}", tradeHistoryString));
+                        }
+                    }
+                    List<TradeInfo> tradeHistoryList = JsonConvert.DeserializeObject<List<TradeInfo>>(tradeHistoryString);
+                    tradeHistoryList.Reverse();
+                    //check each trade
+                    if(Int32.Parse(tradeHistoryList[0].id) == lastTrade)
+                    {
+                        LogWorker("No trade has been found since last check!");
+                    }
+                    else
+                    {
+                        foreach (TradeInfo item in lastTrades)
+                        {
+                            int tradeCount = 0;
+                            int qtyCount = 0;
+                            if (Int32.Parse(item.id) != lastTrade && MyDC(item.price) == queuePrice)
+                            {
+                                LogWorker("Found new trade with ID: " + item.id + " with qty: " + item.qty);
+                                tradeCount++;
+                                qtyCount += Int32.Parse(item.qty);
+                            }
+                            else { break; }
+                        }
+                    }
+
+
+                    LogWorker("Waiting 3 secs...");
+                    await WaitAsynchronouslyAsync(3000);
+                }
+                
+            }
+            catch(Exception ex)
+            {
+                LogWorker("Error in history lookup flow: \n" + ex.Message);
+            }
+            
         }
     }
 }
