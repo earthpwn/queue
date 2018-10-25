@@ -287,6 +287,7 @@ namespace queue
         {
             try
             {
+                LogWorker("Thread #" + Thread.CurrentThread.ManagedThreadId.ToString() + " has started to track an " + /*Instrument.Text +*/ "order with price: " + queuePrice.ToString() + " and amount: " + queueAmount.ToString());
                 int lastTrade = 0;
                 bool cont = true;
 
@@ -296,8 +297,9 @@ namespace queue
                 lastTrades.Reverse();
                 lastTrade = Int32.Parse(lastTrades[0].id);
                 LogWorker("Last trade id: " + lastTrades[0].id + " with qty: " + lastTrades[0].qty);
-                LogWorker("Waiting 3 secs...");
-                await WaitAsynchronouslyAsync(3000);
+                LogWorker("Waiting 60 secs...");
+                await WaitAsynchronouslyAsync(10000);
+                LogWorker("Wait is over");
 
                 while (cont)
                 {
@@ -325,25 +327,52 @@ namespace queue
                     }
                     else
                     {
-                        foreach (TradeInfo item in lastTrades)
+                        int tradeCount = 0;
+                        decimal qtyCount = 0;
+                        foreach (TradeInfo item in tradeHistoryList)
                         {
-                            int tradeCount = 0;
-                            int qtyCount = 0;
-                            if (Int32.Parse(item.id) != lastTrade && MyDC(item.price) == queuePrice)
+                            if (Int32.Parse(item.id) != lastTrade)
                             {
-                                LogWorker("Found new trade with ID: " + item.id + " with qty: " + item.qty);
-                                tradeCount++;
-                                qtyCount += Int32.Parse(item.qty);
+                                LogWorker("Found new trade with ID: " + item.id + " with qty: " + item.qty + " with price: " + item.price);
+                                if (MyDC(item.price) == queuePrice)
+                                {
+                                    LogWorker("Trade amount has been reduced from queue amount..." + queueAmount.ToString() + " - " + item.qty + " = " + (queueAmount - MyDC(item.qty)).ToString());
+                                    queueAmount -= MyDC(item.qty);
+                                    tradeCount++;
+                                    qtyCount += MyDC(item.qty);
+                                }
+                                else
+                                {
+                                    LogWorker("An invalid trade. Ignoring...");
+                                }
                             }
-                            else { break; }
+                            else {
+                                LogWorker("Total " + tradeCount.ToString() + " trades have been found with total reduced amount of " + qtyCount.ToString());
+                                break;
+                            }
                         }
                     }
+                    
+                    if(lastTrade != Int32.Parse(tradeHistoryList[0].id))
+                    {
+                        lastTrade = Int32.Parse(tradeHistoryList[0].id);
+                        LogWorker("Last trade has been changed into: " + lastTrade.ToString());
+                    }
+                    else
+                    {
+                        LogWorker("Last trade is same, no changes.");
+                    }
+                    LogWorker("Last updated queue is: " + "|        " + (queueAmount * queuePrice)+ " BTC        |  |   YOU   |");
 
+                    //amount calculations
 
-                    LogWorker("Waiting 3 secs...");
-                    await WaitAsynchronouslyAsync(3000);
+                    LogWorker("Waiting 60 secs...");
+                    await WaitAsynchronouslyAsync(10000);
+                    LogWorker("Wait is over");
                 }
                 
+                //loop is over, handle rest
+
             }
             catch(Exception ex)
             {
